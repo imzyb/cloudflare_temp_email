@@ -12,6 +12,8 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    # 🌟 修复核心 1：如果是由 upstream_run 触发的，确保它有读取仓库 Secrets 的权限
+    environment: ${{ github.event.workflow_run && 'production' || '' }}
     permissions:
       contents: write
     steps:
@@ -27,7 +29,7 @@ jobs:
         name: Install pnpm
         id: pnpm-install
         with:
-          version: 9
+          version: 9 # 🌟 修复核心 2：锁定 v9 版本，彻底避开 pnpm v10 的依赖脚本拦截问题
           run_install: false
 
       - name: Deploy Backend for ${{ github.ref_name }}
@@ -52,7 +54,6 @@ jobs:
           export use_mail_wasm_parser=${{ secrets.BACKEND_USE_MAIL_WASM_PARSER }}
           
           cd worker/
-          # ✅ 修复核心：使用环境变量写入，避免 Shell 解析特殊字符
           printf '%s\n' "$WRANGLER_TOML_CONTENT" > wrangler.toml
           
           pnpm install --no-frozen-lockfile
@@ -64,20 +65,12 @@ jobs:
             echo "Applied mail-parser-wasm-worker patch"
           fi
 
-          if [ "$debug_mode" = "true" ]; then
-            pnpm run deploy
-          else
-            if pnpm run deploy >/dev/null 2>&1; then
-              echo "Deploy succeeded"
-            else
-              code=$?
-              echo "Command failed with exit code $code"
-              exit "$code"
-            fi
-          fi
+          # 🌟 修复核心 3：移除错误隐藏，让真实的 Cloudflare 报错能打印出来
+          echo "Starting wrangler deploy..."
+          pnpm run deploy
+          
           echo "Deployed for tag ${{ github.ref_name }}"
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          # ✅ 将 secret 映射到环境变量中
           WRANGLER_TOML_CONTENT: ${{ secrets.BACKEND_TOML }}
